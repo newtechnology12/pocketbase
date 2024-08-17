@@ -1,19 +1,26 @@
-FROM alpine:latest as download
-
-RUN apk add curl
-
-RUN curl -s https://get-latest.deno.dev/pocketbase/pocketbase?no-v=true >> tag.txt
-
-RUN wget https://github.com/pocketbase/pocketbase/releases/download/v$(cat tag.txt)/pocketbase_$(cat tag.txt)_linux_amd64.zip \
-    && unzip pocketbase_$(cat tag.txt)_linux_amd64.zip \
-    && chmod +x /pocketbase
-
 FROM alpine:latest
 
-RUN apk update && apk add --update git build-base ca-certificates && rm -rf /var/cache/apk/*
+ARG PB_VERSION=0.21.3
 
-COPY --from=download /pocketbase /usr/local/bin/pocketbase
+RUN apk add --no-cache \
+    unzip \
+    ca-certificates \
+    curl
+
+# download and unzip PocketBase
+RUN curl -L -o /tmp/pb.zip https://github.com/pocketbase/pocketbase/releases/download/v${PB_VERSION}/pocketbase_${PB_VERSION}_linux_amd64.zip && \
+    unzip /tmp/pb.zip -d /pocketbase && \
+    chmod +x /pocketbase/pocketbase
+
+COPY ./pb_hooks /pocketbase/pb_hooks
+COPY ./pb_migrations /pocketbase/pb_migrations
+COPY ./pb_public /pocketbase/pb_public
+
+WORKDIR /pocketbase
+
+RUN ./pocketbase migrate --migrations=/pocketbase/pb_migrations --hooks=/pocketbase/pb_hooks
 
 EXPOSE 8090
 
-ENTRYPOINT /usr/local/bin/pocketbase serve --http=0.0.0.0:8090 --dir=/root/pocketbase
+# start PocketBase
+CMD ["./pocketbase", "serve", "--http=0.0.0.0:8090", "--indexFallback"]
